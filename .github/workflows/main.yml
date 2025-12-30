@@ -42,3 +42,13 @@ jobs:
           files: .pio/build/esp32doit-devkit-v1/firmware.bin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 6. Cai dat Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: 7. Cap nhat link vao Firebase Realtime Database
+        run: |
+          # Dung curl de day thang len Database bang Secret ban dang co
+          curl -X PATCH -d '{
+            "latest_version": "${{ github.run_number }}",
+            "url": "https://github.com/${{ github.repository }}/releases/download/v${{ github.run_number }}/firmware.bin"
+          }' "${{ secrets.FIREBASE_URL }}/ota.json?auth=${{ secrets.FIREBASE_SECRET }}"
