@@ -1,13 +1,14 @@
-#include <HTTPUpdate.h>
-#include <WiFiClientSecure.h>
+#include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPUpdate.h>
 #include <Firebase_ESP_Client.h>
 
-// --- CẤU HÌNH ---
-const char* WIFI_SSID = "!!!";
+// --- CẤU HÌNH WIFI & FIREBASE ---
+const char* WIFI_SSID = "!!!"; 
 const char* WIFI_PASSWORD = "0907803189";
 #define API_KEY "AIzaSyA7ZzZUnjSVivNX_0XsCdrKFIDRjquC2ww"
-#define DATABASE_URL "https://kc326e-hki-25-25-nhom8-default-rtdb.asia-southeast1.firebasedatabase.app"
+#define DATABASE_URL "https://kc326e-hki-25-25-nhom8-default-rtdb.asia-southeast1.firebasedatabase.app/"
 #define USER_EMAIL "xe@gmail.com"
 #define USER_PASSWORD "123456"
 
@@ -22,14 +23,19 @@ const char* WIFI_PASSWORD = "0907803189";
 #define ECHO 18
 #define BUZZER 19
 
+// --- CẤU HÌNH LEDC (PWM CHO CORE < 3.0) ---
+#define LEDC_CHANNEL_A 0
+#define LEDC_CHANNEL_B 1
+#define LEDC_TIMER_13_BIT 8
+#define LEDC_BASE_FREQ 5000
+
 // --- BIẾN ĐIỀU KHIỂN ---
-int carSpeed = 255;
-int turnSpeed = 70;
+int carSpeed = 255;    // Tốc độ tối đa
+int turnSpeed = 120;   // Tốc độ khi bẻ lái (giảm tốc bánh bên trong)
 int dist = 100;
 String currentCmd = "S";
-unsigned long lastDistMillis = 0;
-int lastSentDist = -1;
 unsigned long lastHeartbeatSend = 0;
+unsigned long lastDistMillis = 0;
 
 FirebaseData stream;
 FirebaseData fbdo;
@@ -37,197 +43,165 @@ FirebaseAuth auth;
 FirebaseConfig config;
 
 // ==========================================
-// 1. CÁC HÀM HỖ TRỢ
+// HÀM ĐIỀU KHIỂN MOTOR CHI TIẾT
 // ==========================================
-int getQuickDistance() {
-  digitalWrite(TRIG, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG, LOW);
-  long duration = pulseIn(ECHO, HIGH, 15000); 
-  if (duration == 0) return 400;
-  return (int)(duration * 0.034 / 2);
-}
-
 void stopMotors() {
-  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
-  ledcWrite(ENA, 0); ledcWrite(ENB, 0);
+    digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+    digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+    ledcWrite(LEDC_CHANNEL_A, 0); ledcWrite(LEDC_CHANNEL_B, 0);
 }
 
-// ==========================================
-// 2. NHẬN LỆNH TỪ APP (STREAM)
-// ==========================================
 void moveCar(String cmd) {
-  // Kiểm tra vật cản trước khi đi tiến
-  if (dist > 0 && dist <= 20 && (cmd == "F" || cmd == "FL" || cmd == "FR")) {
-    stopMotors();
-    currentCmd = "S";
-    Serial.println(">>> CHẶN LỆNH TIẾN: Có vật cản quá gần!");
-    return;
-  }
+    // Chống va chạm khi tiến (bao gồm cả tiến rẽ)
+    if (dist > 0 && dist <= 20 && (cmd == "F" || cmd == "FL" || cmd == "FR")) {
+        stopMotors();
+        currentCmd = "S";
+        return;
+    }
 
-  if (cmd == "F") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); } 
-  else if (cmd == "B") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); }
-  else if (cmd == "L") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); } 
-  else if (cmd == "R") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); } 
-  else if (cmd == "FL") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, turnSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); }
-  else if (cmd == "FR") { ledcWrite(ENA, turnSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); }
-  else { stopMotors(); }
+    if (cmd == "F") { // Tiến thẳng
+        digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); 
+        digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); 
+        ledcWrite(LEDC_CHANNEL_A, carSpeed); ledcWrite(LEDC_CHANNEL_B, carSpeed); 
+    } 
+    else if (cmd == "B") { // Lùi thẳng
+        digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); 
+        digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); 
+        ledcWrite(LEDC_CHANNEL_A, carSpeed); ledcWrite(LEDC_CHANNEL_B, carSpeed); 
+    } 
+    else if (cmd == "L") { // Xoay trái tại chỗ
+        digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); 
+        digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); 
+        ledcWrite(LEDC_CHANNEL_A, carSpeed); ledcWrite(LEDC_CHANNEL_B, carSpeed); 
+    } 
+    else if (cmd == "R") { // Xoay phải tại chỗ
+        digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); 
+        digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); 
+        ledcWrite(LEDC_CHANNEL_A, carSpeed); ledcWrite(LEDC_CHANNEL_B, carSpeed); 
+    } 
+    else if (cmd == "FL") { // Tiến rẽ trái (Bánh trái chậm, bánh phải nhanh)
+        digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); 
+        digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); 
+        ledcWrite(LEDC_CHANNEL_A, turnSpeed); ledcWrite(LEDC_CHANNEL_B, carSpeed); 
+    } 
+    else if (cmd == "FR") { // Tiến rẽ phải (Bánh trái nhanh, bánh phải chậm)
+        digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); 
+        digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); 
+        ledcWrite(LEDC_CHANNEL_A, carSpeed); ledcWrite(LEDC_CHANNEL_B, turnSpeed); 
+    } 
+    else if (cmd == "BL") { // Lùi rẽ trái
+        digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); 
+        digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); 
+        ledcWrite(LEDC_CHANNEL_A, turnSpeed); ledcWrite(LEDC_CHANNEL_B, carSpeed); 
+    } 
+    else if (cmd == "BR") { // Lùi rẽ phải
+        digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); 
+        digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); 
+        ledcWrite(LEDC_CHANNEL_A, carSpeed); ledcWrite(LEDC_CHANNEL_B, turnSpeed); 
+    } 
+    else { stopMotors(); }
 }
 
+// ==========================================
+// XỬ LÝ STREAM & OTA
+// ==========================================
 void streamCallback(FirebaseStream data) {
-  if (data.dataType() == "json") {
-    FirebaseJson &json = data.jsonObject();
-    FirebaseJsonData jsonData;
-    
-    // Nhận lệnh di chuyển
-    json.get(jsonData, "cmd");
-    if (jsonData.success) {
-      currentCmd = jsonData.stringValue;
-      Serial.print("[Firebase] Lệnh mới: "); Serial.println(currentCmd);
-      moveCar(currentCmd);
+    if (data.dataType() == "json") {
+        FirebaseJson &json = data.jsonObject();
+        FirebaseJsonData jsonData;
+        if (json.get(jsonData, "cmd")) currentCmd = jsonData.stringValue;
+        if (json.get(jsonData, "horn")) digitalWrite(BUZZER, jsonData.intValue == 1 ? HIGH : LOW);
+        moveCar(currentCmd);
     }
-    
-    // Nhận lệnh còi
-    json.get(jsonData, "horn");
-    if (jsonData.success) {
-      int hornState = jsonData.intValue;
-      digitalWrite(BUZZER, hornState == 1 ? HIGH : LOW);
-      Serial.print("[Firebase] Còi: "); Serial.println(hornState == 1 ? "BẬT" : "TẮT");
-    }
-  }
 }
 
-// ==========================================
-// 3. HÀM CẬP NHẬT OTA
-// ==========================================
 void handleOTA() {
-  bool runUpdate = false;
-  Firebase.RTDB.getBool(&fbdo, "/update/trigger", &runUpdate);
-
-  if (runUpdate) {
-    String downloadUrl = "";
-    Firebase.RTDB.getString(&fbdo, "/update/url", &downloadUrl);
-
-    if (downloadUrl != "" && downloadUrl != "null") {
-      Serial.println("\n--- BẮT ĐẦU CẬP NHẬT OTA ---");
-      stopMotors();
-      Firebase.RTDB.endStream(&stream);
-      delay(500);
-
-      WiFiClientSecure client;
-      client.setInsecure();
-      httpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-
-      Serial.println("Đang tải file từ GitHub...");
-      t_httpUpdate_return ret = httpUpdate.update(client, downloadUrl);
-
-      if (ret == HTTP_UPDATE_OK) {
-        Serial.println("THÀNH CÔNG! Đang khởi động lại...");
-        Firebase.RTDB.setBool(&fbdo, "/update/trigger", false);
-        delay(1000);
-        ESP.restart();
-      } else {
-        Serial.printf("THẤT BẠI: %s\n", httpUpdate.getLastErrorString().c_str());
-        Firebase.RTDB.setBool(&fbdo, "/update/trigger", false);
-        Firebase.RTDB.beginStream(&stream, "/rc_car");
-        Firebase.RTDB.setStreamCallback(&stream, streamCallback, [](bool t){});
-      }
+    bool trigger = false;
+    if (Firebase.RTDB.getBool(&fbdo, "/update/trigger") && fbdo.boolData()) {
+        String url = "";
+        if (Firebase.RTDB.getString(&fbdo, "/update/url")) {
+            url = fbdo.stringData();
+            stopMotors();
+            Firebase.RTDB.endStream(&stream);
+            
+            WiFiClientSecure client;
+            client.setInsecure();
+            httpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+            
+            t_httpUpdate_return ret = httpUpdate.update(client, url);
+            if (ret == HTTP_UPDATE_OK) {
+                Firebase.RTDB.setBool(&fbdo, "/update/trigger", false);
+                ESP.restart();
+            } else {
+                Firebase.RTDB.setBool(&fbdo, "/update/trigger", false);
+                Firebase.RTDB.beginStream(&stream, "/rc_car");
+            }
+        }
     }
-  }
 }
 
 // ==========================================
-// 4. SETUP & LOOP
+// SETUP & LOOP
 // ==========================================
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
-  Serial.println("\n\n============================");
-  Serial.println("HỆ THỐNG XE RC KHỞI ĐỘNG");
-  
-  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
-  pinMode(BUZZER, OUTPUT);
-  pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
+    Serial.begin(115200);
 
-  pinMode(ENA, OUTPUT);
-  pinMode(ENB, OUTPUT);
+    pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+    pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+    pinMode(BUZZER, OUTPUT);
+    pinMode(TRIG, OUTPUT); pinMode(ECHO, INPUT);
 
-  // THAY THẾ ledcAttach bằng đoạn này:
-  ledcAttachPin(ENA, 0); // Gắn chân ENA vào kênh 0
-  ledcSetup(0, 30000, 8); // Cấu hình kênh 0: 30kHz, 8-bit
-  
-  ledcAttachPin(ENB, 1); // Gắn chân ENB vào kênh 1
-  ledcSetup(1, 30000, 8); // Cấu hình kênh 1: 30kHz, 8-bit 
-  stopMotors();
+    // Cấu hình LEDC PWM (Core < 3.0)
+    ledcSetup(LEDC_CHANNEL_A, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
+    ledcAttachPin(ENA, LEDC_CHANNEL_A);
+    ledcSetup(LEDC_CHANNEL_B, LEDC_BASE_FREQ, LEDC_TIMER_13_BIT);
+    ledcAttachPin(ENB, LEDC_CHANNEL_B);
 
-  Serial.print("Đang kết nối WiFi");
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\n[OK] WiFi đã kết nối!");
+    stopMotors();
 
-  config.api_key = API_KEY;
-  config.database_url = DATABASE_URL;
-  auth.user.email = USER_EMAIL;
-  auth.user.password = USER_PASSWORD;
-  Firebase.begin(&config, &auth);
-  Firebase.reconnectWiFi(true);
-  Serial.println("[OK] Firebase đã sẵn sàng!");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
 
-  Firebase.RTDB.beginStream(&stream, "/rc_car");
-  Firebase.RTDB.setStreamCallback(&stream, streamCallback, [](bool t){});
-  Serial.println("[OK] Đang chờ lệnh từ App...");
+    config.api_key = API_KEY;
+    config.database_url = DATABASE_URL;
+    auth.user.email = USER_EMAIL;
+    auth.user.password = USER_PASSWORD;
+
+    Firebase.begin(&config, &auth);
+    Firebase.RTDB.beginStream(&stream, "/rc_car");
+    Firebase.RTDB.setStreamCallback(&stream, streamCallback, [](bool t){});
 }
 
 void loop() {
-  // 1. Đo khoảng cách
-  dist = getQuickDistance();
+    // Đo khoảng cách vật cản
+    digitalWrite(TRIG, LOW); delayMicroseconds(2);
+    digitalWrite(TRIG, HIGH); delayMicroseconds(10);
+    digitalWrite(TRIG, LOW);
+    long duration = pulseIn(ECHO, HIGH, 20000);
+    dist = (duration == 0) ? 400 : (int)(duration * 0.034 / 2);
 
-  // 2. Dừng khẩn cấp nếu đang đi tiến mà gặp vật cản
-  if (dist > 0 && dist <= 20) {
-    if (currentCmd == "F" || currentCmd == "FL" || currentCmd == "FR") {
-      stopMotors();
-      currentCmd = "S"; 
-      Serial.print("!!! DỪNG KHẨN CẤP: Vật cản cách "); Serial.print(dist); Serial.println(" cm");
-    }
-  }
-
-  // 3. Gửi dữ liệu lên Firebase
-  if (Firebase.ready()) {
-    // Heartbeat 5s/lần
-    if (millis() - lastHeartbeatSend > 5000) {
-      Firebase.RTDB.setIntAsync(&fbdo, "/rc_car/heartbeat", millis());
-      lastHeartbeatSend = millis();
+    // Tự động dừng nếu lệnh hiện tại là Tiến mà gặp vật cản
+    if (dist > 0 && dist <= 20 && (currentCmd == "F" || currentCmd == "FL" || currentCmd == "FR")) {
+        stopMotors();
+        currentCmd = "S";
     }
 
-    // Gửi cảnh báo khoảng cách (Warning)
-    if (dist > 0 && dist <= 25) {
-      if (abs(dist - lastSentDist) >= 2 || (millis() - lastDistMillis > 300)) {
-        Firebase.RTDB.setIntAsync(&fbdo, "/rc_car/distance", dist);
-        lastDistMillis = millis();
-        lastSentDist = dist;
-        Serial.print("--> Gửi cảnh báo lên App: "); Serial.print(dist); Serial.println(" cm");
-      }
-    } else if (lastSentDist != 0) {
-      if (Firebase.RTDB.setInt(&fbdo, "/rc_car/distance", 0)) {
-        lastSentDist = 0; 
-        Serial.println("--> Đường trống: Đã xóa cảnh báo trên App");
-      }
+    if (Firebase.ready()) {
+        // Heartbeat để App biết xe đang sống
+        if (millis() - lastHeartbeatSend > 5000) {
+            Firebase.RTDB.setIntAsync(&fbdo, "/rc_car/heartbeat", millis());
+            lastHeartbeatSend = millis();
+        }
+        // Gửi khoảng cách lên App
+        if (millis() - lastDistMillis > 500) {
+            Firebase.RTDB.setIntAsync(&fbdo, "/rc_car/distance", dist);
+            lastDistMillis = millis();
+        }
+        // Kiểm tra OTA mỗi 10 giây
+        static unsigned long otaTimer = 0;
+        if (millis() - otaTimer > 10000) {
+            handleOTA();
+            otaTimer = millis();
+        }
     }
-  }
-
-  // 4. Kiểm tra OTA mỗi 10s
-  static unsigned long lastOTA = 0;
-  if (millis() - lastOTA > 10000) {
-      handleOTA();
-      lastOTA = millis();
-  }
-
-  delay(10);
 }
