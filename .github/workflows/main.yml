@@ -42,3 +42,15 @@ jobs:
           files: .pio/build/esp32doit-devkit-v1/firmware.bin
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 6. Day file len Firebase Storage
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only storage
+        env:
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      # (Tùy chọn) Cập nhật số phiên bản lên Realtime Database để Robot biết có bản mới
+      - name: 7. Cap nhat phien ban vao Firebase Database
+        run: |
+          curl -X PATCH -d '{"latest_version": "${{ github.run_number }}", "url": "https://firebasestorage.googleapis.com/v0/b/${{ vars.FIREBASE_PROJECT_ID }}.appspot.com/o/firmware.bin?alt=media"}' \
+          "https://${{ vars.FIREBASE_PROJECT_ID }}-default-rtdb.firebaseio.com/ota.json"
