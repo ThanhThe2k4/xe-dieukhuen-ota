@@ -1,33 +1,44 @@
-name: Tự động Build Firmware ESP32
+name: Tu Dong Build va Release Firmware
 
 on:
   push:
     branches:
-      - main  # Chạy khi bạn gửi code lên nhánh chính
+      - main  # Chạy mỗi khi bạn push code lên nhánh main
+
+permissions:
+  contents: write  # Cho phép GitHub Actions có quyền tạo bản Release
 
 jobs:
-  build:
+  build_and_release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Tải code từ GitHub về máy ảo
-        uses: actions/checkout@v3
+      - name: 1. Tai code tu GitHub ve may ao
+        uses: actions/checkout@v4
 
-      - name: Cài đặt Python
-        uses: actions/setup-python@v4
+      - name: 2. Cai dat Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
+          python-version: '3.11'
 
-      - name: Cài đặt PlatformIO
+      - name: 3. Cai dat PlatformIO
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade platformio
 
-      - name: Biên dịch Code (Build .bin)
+      - name: 4. Bien dich Code (Build .bin)
         run: pio run
 
-      - name: Lưu trữ file .bin sau khi build
-        uses: actions/upload-artifact@v3
+      - name: 5. Tu dong tao Release va upload file .bin
+        uses: softprops/action-gh-release@v2
         with:
-          name: Robot_Firmware
-          path: .pio/build/esp32doit-devkit-v1/firmware.bin
+          # Tu dong dat ten phien ban theo so thu tu lan build (v1, v2, v3...)
+          tag_name: v${{ github.run_number }}
+          name: Firmware Robot Phien Ban v${{ github.run_number }}
+          body: |
+            Cap nhat tu dong tu GitHub Actions.
+            - Build ID: ${{ github.run_id }}
+            - File build: firmware.bin
+          files: .pio/build/esp32doit-devkit-v1/firmware.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
