@@ -1,0 +1,23 @@
+name: Auto Update Firebase Link
+
+on:
+  release:
+    types: [published] # Robot sẽ chạy mỗi khi bạn nhấn "Publish Release"
+
+jobs:
+  update-firebase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Release Asset URL
+        id: get_link
+        run: |
+          # Lấy link của file có đuôi .bin trong bản Release bạn vừa upload
+          ASSET_URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.assets[] | select(.name | endswith(".bin")) | .browser_download_url')
+          echo "URL tìm thấy: $ASSET_URL"
+          echo "url=$ASSET_URL" >> $GITHUB_OUTPUT
+
+      - name: Update Firebase Realtime Database
+        run: |
+          # Gửi link và lệnh kích hoạt (trigger) sang Firebase
+          curl -X PATCH "${{ secrets.FIREBASE_URL }}.json?auth=${{ secrets.FIREBASE_SECRET }}" \
+          -d '{"url": "${{ steps.get_link.outputs.url }}", "trigger": true}'
