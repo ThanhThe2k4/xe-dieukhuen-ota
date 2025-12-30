@@ -70,8 +70,8 @@ void moveCar(String cmd) {
 
   if (cmd == "F") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); } 
   else if (cmd == "B") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); }
-  else if (cmd == "R") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); } 
-  else if (cmd == "L") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); } 
+  else if (cmd == "L") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); } 
+  else if (cmd == "R") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH); } 
   else if (cmd == "FL") { ledcWrite(ENA, carSpeed); ledcWrite(ENB, turnSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); }
   else if (cmd == "FR") { ledcWrite(ENA, turnSpeed); ledcWrite(ENB, carSpeed); digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH); digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); }
   else { stopMotors(); }
